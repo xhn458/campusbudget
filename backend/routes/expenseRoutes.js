@@ -3,46 +3,101 @@ const router = express.Router();
 const Expense = require("../models/Expense");
 const jwt = require("jsonwebtoken");
 
-// Auth middleware
+// ======================
+// AUTH MIDDLEWARE
+// ======================
 const auth = (req, res, next) => {
-  const token = req.headers.authorization;
-  if (!token) return res.status(401).json({ error: "No token" });
+  let token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).json({ error: "No token" });
+  }
+
+  if (token.startsWith("Bearer ")) {
+    token = token.split(" ")[1];
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.id;
     next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    console.log("TOKEN ERROR:", err.message);
+    return res.status(401).json({ error: "Invalid token" });
   }
 };
 
-// Create expense
+// ======================
+// CREATE EXPENSE
+// ======================
 router.post("/", auth, async (req, res) => {
   try {
-    const expense = new Expense({ ...req.body, userId: req.userId });
+    console.log("BODY:", req.body);
+
+    const { title, amount, category } = req.body;
+
+    // VALIDATION
+    if (!title || !category || amount === undefined) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (isNaN(amount)) {
+      return res.status(400).json({ error: "Amount must be a number" });
+    }
+
+    const expense = new Expense({
+      title,
+      amount,
+      category,
+      userId: req.userId
+    });
+
     const saved = await expense.save();
     res.json(saved);
+
   } catch (err) {
+    console.log("CREATE EXPENSE ERROR:", err.message);
+
+    // 🔥 HANDLE DUPLICATE TITLE ERROR
+    if (err.code === 11000) {
+      return res.status(400).json({
+        error: "Please choose a new title"
+      });
+    }
+
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get only THIS user's expenses
+// ======================
+// GET USER EXPENSES
+// ======================
 router.get("/", auth, async (req, res) => {
   try {
-    const expenses = await Expense.find({ userId: req.userId }).sort({ date: -1 });
+    const expenses = await Expense.find({
+      userId: req.userId
+    }).sort({ date: -1 });
+
     res.json(expenses);
   } catch (err) {
+    console.log("FETCH EXPENSE ERROR:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Delete only THIS user's expense
+// ======================
+// DELETE EXPENSE
+// ======================
 router.delete("/:id", auth, async (req, res) => {
   try {
-    await Expense.findOneAndDelete({ _id: req.params.id, userId: req.userId });
+    await Expense.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.userId
+    });
+
     res.json({ message: "Deleted" });
   } catch (err) {
+    console.log("DELETE EXPENSE ERROR:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
