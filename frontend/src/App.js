@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend
@@ -28,8 +28,12 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
   );
 };
 
-function Calendar({ expenses }) {
+function Calendar({ expenses, onDateClick }) {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [position, setPosition] = useState({ x: window.innerWidth - 240, y: 20 });
+  const [dragging, setDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
@@ -52,13 +56,54 @@ function Calendar({ expenses }) {
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const allCells = [...blanks, ...days];
 
+  const onMouseDown = (e) => {
+    setDragging(true);
+    dragOffset.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (dragging) {
+        setPosition({ x: e.clientX - dragOffset.current.x, y: e.clientY - dragOffset.current.y });
+      }
+    };
+    const onMouseUp = () => setDragging(false);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dragging]);
+
   return (
-    <div style={calStyles.wrapper}>
+    <div style={{
+      ...calStyles.wrapper,
+      left: position.x,
+      top: position.y,
+      right: "unset",
+      cursor: dragging ? "grabbing" : "default"
+    }}>
+      {/* Drag Handle */}
+      <div
+        onMouseDown={onMouseDown}
+        style={{
+          textAlign: "center", color: "#4b5563", fontSize: "14px",
+          marginBottom: "6px", userSelect: "none", cursor: dragging ? "grabbing" : "grab",
+          letterSpacing: "4px", paddingBottom: "4px",
+          borderBottom: "1px solid #1f2937"
+        }}
+      >
+        ⠿ ⠿ ⠿
+      </div>
+
       <div style={calStyles.header}>
         <button onClick={prevMonth} style={calStyles.navBtn}>‹</button>
         <span style={calStyles.monthLabel}>{monthNames[month]} {year}</span>
         <button onClick={nextMonth} style={calStyles.navBtn}>›</button>
       </div>
+
       <div style={calStyles.grid}>
         {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
           <div key={d} style={calStyles.dayLabel}>{d}</div>
@@ -66,13 +111,24 @@ function Calendar({ expenses }) {
         {allCells.map((day, i) => {
           const spent = day ? spendingByDay[day] : null;
           const hasSpending = spent > 0;
+          const today = new Date();
+          const isToday = day && today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
           return (
-            <div key={i} style={{
-              ...calStyles.cell,
-              background: hasSpending ? "#1e3a5f" : "transparent",
-              border: hasSpending ? "1px solid #3b82f6" : "1px solid transparent",
-              color: day ? "white" : "transparent"
-            }}>
+            <div
+              key={i}
+              onClick={() => day && onDateClick(new Date(year, month, day))}
+              title={day ? `Click to add expense on ${monthNames[month]} ${day}` : ""}
+              style={{
+                ...calStyles.cell,
+                background: hasSpending ? "#1e3a5f" : isToday ? "#1f2937" : "transparent",
+                border: isToday ? "1px solid #3b82f6" : hasSpending ? "1px solid #3b82f6" : "1px solid transparent",
+                color: day ? "white" : "transparent",
+                cursor: day ? "pointer" : "default",
+                outline: isToday ? "2px solid #3b82f680" : "none",
+              }}
+              onMouseEnter={e => { if (day) e.currentTarget.style.background = "#1e3a5f88"; }}
+              onMouseLeave={e => { if (day) e.currentTarget.style.background = hasSpending ? "#1e3a5f" : isToday ? "#1f2937" : "transparent"; }}
+            >
               <div style={{ fontSize: "11px", fontWeight: "bold" }}>{day || ""}</div>
               {hasSpending && (
                 <div style={{ fontSize: "9px", color: "#60a5fa", marginTop: "1px" }}>${spent}</div>
@@ -80,6 +136,10 @@ function Calendar({ expenses }) {
             </div>
           );
         })}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: "8px", fontSize: "9px", color: "#4b5563" }}>
+        Click a date to add expense
       </div>
     </div>
   );
@@ -89,7 +149,7 @@ const calStyles = {
   wrapper: {
     background: "#111827", borderRadius: "12px", padding: "12px",
     width: "220px", boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-    position: "fixed", top: "20px", right: "20px", zIndex: 100,
+    position: "fixed", zIndex: 100,
     border: "1px solid #1f2937"
   },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" },
@@ -97,7 +157,7 @@ const calStyles = {
   navBtn: { background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: "16px", padding: "0 4px" },
   grid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px" },
   dayLabel: { color: "#6b7280", fontSize: "10px", textAlign: "center", padding: "2px 0", fontWeight: "bold" },
-  cell: { borderRadius: "4px", padding: "3px 2px", textAlign: "center", fontSize: "11px", minHeight: "28px" }
+  cell: { borderRadius: "4px", padding: "3px 2px", textAlign: "center", fontSize: "11px", minHeight: "28px", transition: "background 0.15s" }
 };
 
 function App() {
@@ -120,9 +180,15 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsForm, setSettingsForm] = useState({ monthlyIncome: "", monthlyBudget: "" });
 
- const getHeaders = () => ({
-  headers: { Authorization: localStorage.getItem("token") }
-});
+  // Calendar date modal state
+  const [calendarModal, setCalendarModal] = useState({ open: false, date: null });
+  const [calForm, setCalForm] = useState({ title: "", amount: "", category: "" });
+  const [calCustomCategory, setCalCustomCategory] = useState("");
+  const [calIsCustom, setCalIsCustom] = useState(false);
+
+  const getHeaders = () => ({
+    headers: { Authorization: localStorage.getItem("token") }
+  });
 
   const handleAuth = async () => {
     try {
@@ -168,18 +234,18 @@ function App() {
     }
   };
 
-const fetchUser = async () => {
-  try {
-    const res = await axios.get(`${API}/api/auth/me`, getHeaders());
-    setUserData(res.data);
-    setSettingsForm({
-      monthlyIncome: res.data.monthlyIncome || "",
-      monthlyBudget: res.data.monthlyBudget || ""
-    });
-  } catch (err) {
-    console.log("fetchUser not available on this server");
-  }
-};
+  const fetchUser = async () => {
+    try {
+      const res = await axios.get(`${API}/api/auth/me`, getHeaders());
+      setUserData(res.data);
+      setSettingsForm({
+        monthlyIncome: res.data.monthlyIncome || "",
+        monthlyBudget: res.data.monthlyBudget || ""
+      });
+    } catch (err) {
+      console.log("fetchUser not available on this server");
+    }
+  };
 
   const fetchExpenses = async () => {
     const res = await axios.get(`${API}/api/expenses`, getHeaders());
@@ -208,6 +274,28 @@ const fetchUser = async () => {
       setForm({ title: "", amount: "", category: "" });
       setCustomCategory("");
       setIsCustom(false);
+      fetchExpenses();
+    } catch (err) {
+      alert(err.response?.data?.error || "Error adding expense");
+    }
+  };
+
+  const addExpenseForDate = async () => {
+    try {
+      const finalCategory = calIsCustom ? calCustomCategory : calForm.category;
+      if (!calForm.title || !calForm.amount || !finalCategory) {
+        alert("Please fill out all fields");
+        return;
+      }
+      await axios.post(`${API}/api/expenses`, {
+        ...calForm,
+        category: finalCategory,
+        date: calendarModal.date
+      }, getHeaders());
+      setCalForm({ title: "", amount: "", category: "" });
+      setCalCustomCategory("");
+      setCalIsCustom(false);
+      setCalendarModal({ open: false, date: null });
       fetchExpenses();
     } catch (err) {
       alert(err.response?.data?.error || "Error adding expense");
@@ -318,7 +406,50 @@ const fetchUser = async () => {
   return (
     <div style={{ padding: "20px", paddingRight: "260px", background: "#0f172a", minHeight: "100vh", color: "white" }}>
 
-      <Calendar expenses={expenses} />
+      {/* Draggable Calendar with click-to-add */}
+      <Calendar
+        expenses={expenses}
+        onDateClick={(date) => {
+          setCalForm({ title: "", amount: "", category: "" });
+          setCalCustomCategory("");
+          setCalIsCustom(false);
+          setCalendarModal({ open: true, date });
+        }}
+      />
+
+      {/* Calendar Date Expense Modal */}
+      {calendarModal.open && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={{ marginTop: 0, color: "white" }}>
+              ➕ Add Expense for {calendarModal.date?.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            </h3>
+            <input style={styles.input} placeholder="Title" value={calForm.title}
+              onChange={(e) => setCalForm({ ...calForm, title: e.target.value })} />
+            <input style={styles.input} placeholder="Amount" type="number" value={calForm.amount}
+              onChange={(e) => setCalForm({ ...calForm, amount: Number(e.target.value) })} />
+            <select style={{ ...styles.input, marginBottom: "10px" }}
+              value={calIsCustom ? "custom" : calForm.category}
+              onChange={(e) => {
+                if (e.target.value === "custom") { setCalIsCustom(true); setCalForm({ ...calForm, category: "" }); }
+                else { setCalIsCustom(false); setCalForm({ ...calForm, category: e.target.value }); }
+              }}>
+              <option value="">Select Category</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="custom">✏️ Type my own...</option>
+            </select>
+            {calIsCustom && (
+              <input style={styles.input} placeholder="Enter custom category" value={calCustomCategory}
+                onChange={(e) => setCalCustomCategory(e.target.value)} />
+            )}
+            <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+              <button style={styles.authBtn} onClick={addExpenseForDate}>Add Expense</button>
+              <button style={{ ...styles.authBtn, background: "#374151" }}
+                onClick={() => setCalendarModal({ open: false, date: null })}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {showSettings && (
