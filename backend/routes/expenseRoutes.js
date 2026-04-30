@@ -34,7 +34,7 @@ router.post("/", auth, async (req, res) => {
   try {
     console.log("BODY:", req.body);
 
-    const { title, amount, category } = req.body;
+    const { title, amount, category, date } = req.body;
 
     // VALIDATION
     if (!title || !category || amount === undefined) {
@@ -46,11 +46,12 @@ router.post("/", auth, async (req, res) => {
     }
 
     const expense = new Expense({
-      title,
-      amount,
-      category,
-      userId: req.userId
-    });
+  title,
+  amount,
+  category,
+  userId: req.userId,
+  date: date ? new Date(date) : Date.now()
+});
 
     const saved = await expense.save();
     res.json(saved);
